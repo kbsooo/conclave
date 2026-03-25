@@ -36,7 +36,7 @@ class AgentConfig(BaseModel):
     command: str = "claude"                    # CLI agent command (claude, openclaw, codex, etc.)
     instruction: str = ""                      # light guidance for this meeting (the agent's memory does the rest)
     cli_args: list[str] | None = None          # override default CLI arguments
-    cli_timeout: int = 120                     # seconds before killing the CLI process
+    cli_timeout: int = 300                     # seconds before killing the CLI process
 
     # API backend fields — no memory, so needs full persona
     persona: str = ""                          # required for API backend; secret, only this agent's LLM sees it

@@ -40,7 +40,7 @@ class CLIBackend:
     because the agent has real context about the person.
     """
 
-    def __init__(self, command: str = "claude", args: list[str] | None = None, timeout: int = 120) -> None:
+    def __init__(self, command: str = "claude", args: list[str] | None = None, timeout: int = 300) -> None:
         self.command = command
         self.args = args or []
         self.timeout = timeout
@@ -95,9 +95,11 @@ class CLIBackend:
             return self.args
 
         # Default args for known CLI agents
+        # Each agent CLI has its own print/headless mode
         known_defaults: dict[str, list[str]] = {
             "claude": ["-p", "--output-format", "text"],
-            "codex": ["-q"],
+            "gemini": ["-p", ""],
+            "codex": ["exec", "-o", "/dev/stdout"],
         }
         return known_defaults.get(self.command, [])
 
