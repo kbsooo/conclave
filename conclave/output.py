@@ -1,4 +1,8 @@
-"""Output generation — shared minutes + per-agent personal reports."""
+"""Output generation — shared minutes + per-agent personal reports.
+
+Uses the same Backend abstraction as agents, so it works with both
+CLI agents (claude, openclaw) and API calls (litellm).
+"""
 
 from __future__ import annotations
 
@@ -6,18 +10,27 @@ import json
 import logging
 
 from conclave.agent import Agent
-from conclave.llm import LLMClient
+from conclave.backend import Backend
 from conclave.models import MeetingState, Minutes, PersonalReport
 
 logger = logging.getLogger(__name__)
 
+MINUTES_PROMPT = """\
+You are a meeting minutes writer. Summarize the following meeting transcript.
+Respond in JSON with these fields:
+- "summary": string (2-3 sentence overview)
+- "key_points": list of strings
+- "decisions": list of strings (decisions made, if any)
+- "action_items": list of strings (next steps, if any)
+Be concise and neutral. Do not add information not in the transcript.
+Output ONLY valid JSON, no markdown fences."""
+
 
 class OutputGenerator:
-    """Generates meeting outputs using LLM summarization."""
+    """Generates meeting outputs using any Backend."""
 
-    def __init__(self, llm: LLMClient, model: str = "openai/gpt-4o-mini") -> None:
-        self._llm = llm
-        self._model = model
+    def __init__(self, backend: Backend) -> None:
+        self._backend = backend
 
     async def generate_minutes(self, state: MeetingState) -> Minutes:
         """Summarize transcript into shared meeting minutes.
@@ -26,46 +39,30 @@ class OutputGenerator:
         """
         transcript_text = self._format_transcript(state)
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a meeting minutes writer. Summarize the following meeting transcript. "
-                    "Respond in JSON with these fields:\n"
-                    '- "summary": string (2-3 sentence overview)\n'
-                    '- "key_points": list of strings\n'
-                    '- "decisions": list of strings (decisions made, if any)\n'
-                    '- "action_items": list of strings (next steps, if any)\n'
-                    "Be concise and neutral. Do not add information not in the transcript."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Meeting topic: {state.config.topic}\n\nTranscript:\n{transcript_text}",
-            },
-        ]
-
-        response = await self._llm.complete_json(
-            model=self._model,
-            messages=messages,
-            temperature=0.2,
+        prompt = (
+            f"{MINUTES_PROMPT}\n\n"
+            f"Meeting topic: {state.config.topic}\n\n"
+            f"Transcript:\n{transcript_text}"
         )
 
+        response = await self._backend.generate(prompt)
+
+        # Try to parse JSON from the response (strip markdown fences if present)
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
         try:
-            data = json.loads(response.content)
+            data = json.loads(cleaned)
             return Minutes.model_validate(data)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning("Failed to parse minutes JSON, using raw content: %s", e)
-            return Minutes(summary=response.content)
+            return Minutes(summary=response)
 
     async def generate_personal_report(
         self, state: MeetingState, agent: Agent,
     ) -> PersonalReport:
-        """Generate report from the agent's perspective for its owner.
-
-        The agent's persona shapes what it emphasizes — same transcript,
-        different persona → different report.
-        """
+        """Generate report from the agent's perspective for its owner."""
         report_text = await agent.write_personal_report(state.transcript)
 
         return PersonalReport(
@@ -75,7 +72,7 @@ class OutputGenerator:
         )
 
     def _format_transcript(self, state: MeetingState) -> str:
-        """Format transcript for summarization. No persona info, just utterances."""
+        """Format transcript — utterances only, no persona info."""
         lines: list[str] = []
         for msg in state.transcript:
             if msg.role == "system":

@@ -9,8 +9,7 @@ from __future__ import annotations
 import logging
 
 from conclave.agent import Agent
-from conclave.backend import Backend, create_backend
-from conclave.llm import LLMClient
+from conclave.backend import create_backend
 from conclave.models import (
     AgentConfig,
     MeetingConfig,
@@ -37,10 +36,8 @@ class MeetingOrchestrator:
     def __init__(
         self,
         config: MeetingConfig,
-        llm: LLMClient | None = None,
         turn_strategy: TurnStrategy | None = None,
     ) -> None:
-        self._llm = llm or LLMClient()
         self._state = MeetingState(config=config)
 
         # Create agents — each with its own backend (CLI or API)
@@ -59,16 +56,19 @@ class MeetingOrchestrator:
             mode=config.termination,
             agent_ids=[a.agent_id for a in config.agents],
         )
-        self._output_generator = OutputGenerator(llm=self._llm)
 
-    def _create_backend(self, ac: AgentConfig) -> Backend:
+        # Reuse the first agent's backend for output generation (minutes)
+        first_agent = next(iter(self._agents.values()))
+        self._output_generator = OutputGenerator(backend=first_agent._backend)
+
+    @staticmethod
+    def _create_backend(ac: AgentConfig):
         """Create the appropriate backend for an agent config."""
         return create_backend(
             backend_type=ac.backend,
             command=ac.command,
             model=ac.model,
             temperature=ac.temperature,
-            llm=self._llm,
             cli_args=ac.cli_args,
             cli_timeout=ac.cli_timeout,
         )
