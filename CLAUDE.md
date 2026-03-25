@@ -24,6 +24,22 @@ Conclave is a multi-agent meeting system where AI agents represent humans in mee
 - `output.py` — Shared minutes + per-agent personal report generation
 - `config.py` — YAML/JSON config loading and validation
 
+### Deployment Model
+Conclave uses a **distributed architecture** where each participant runs their own agent locally. Personas never leave the owner's machine — only utterances are shared through a coordination channel.
+
+```
+Alice's PC ── agent.speak() ──→ "utterance only" ──┐
+                                                     │
+Bob's PC  ── agent.speak() ──→ "utterance only" ──┤──→ Shared Channel
+                                                     │    (orchestrator)
+Carol's PC ── agent.speak() ──→ "utterance only" ──┘
+```
+
+This is planned in phases:
+- **v0.1** — Single machine: all agents run locally (solo brainstorming, prototyping)
+- **v0.2** — Central server + API: server orchestrates, participants trust the server
+- **v1.0** — Distributed: each participant runs their agent locally, shared channel carries utterances only (full privacy)
+
 ### Data Flow
 ```
 MeetingConfig → Orchestrator.run() → [Round loop: Turn → Speak → Vote] → OutputGenerator → MeetingResult

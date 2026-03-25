@@ -24,6 +24,26 @@ Instead of attending meetings yourself, configure an AI agent with your persona,
 4. **Conclude** — Meeting ends when the goal is met or vote threshold is reached
 5. **Report** — Shared minutes are distributed to all; each agent writes a private report for its owner
 
+## Architecture
+
+Conclave uses a **distributed model** to guarantee persona privacy. Each participant runs their own agent on their own machine. Only utterances (what the agent *says*) travel through the shared channel — personas never leave the owner's device.
+
+```
+Alice's PC ── agent.speak() ──→ "utterance only" ──┐
+                                                     │
+Bob's PC  ── agent.speak() ──→ "utterance only" ──┤──→ Shared Channel
+                                                     │    (orchestrator)
+Carol's PC ── agent.speak() ──→ "utterance only" ──┘
+```
+
+### Roadmap
+
+| Phase | Mode | Privacy | Use Case |
+|-------|------|---------|----------|
+| **v0.1** | Single machine | Local (your PC) | Solo brainstorming with multiple perspectives |
+| **v0.2** | Central server + API | Server trust required | Team meetings via hosted service |
+| **v1.0** | Fully distributed | Structural guarantee | Each participant runs locally, utterances-only channel |
+
 ## Installation
 
 ```bash
