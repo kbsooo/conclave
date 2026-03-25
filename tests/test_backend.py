@@ -27,8 +27,8 @@ def test_cli_backend_missing_command():
 
 
 @pytest.mark.asyncio
-async def test_cli_backend_echo():
-    """Smoke test: echo backend should return the prompt."""
-    backend = CLIBackend(command="echo", args=[])
+async def test_cli_backend_cat():
+    """Smoke test: cat reads stdin and echoes it back."""
+    backend = CLIBackend(command="cat", args=[])
     result = await backend.generate("hello world")
     assert "hello world" in result

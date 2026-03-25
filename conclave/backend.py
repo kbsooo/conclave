@@ -54,20 +54,25 @@ class CLIBackend:
             )
 
     async def generate(self, prompt: str) -> str:
-        """Run the CLI agent with the prompt and capture its output."""
-        cmd = [self.command] + self._build_args() + [prompt]
+        """Run the CLI agent with the prompt via stdin and capture output.
+
+        Prompt is piped through stdin (not as a CLI arg) to handle
+        arbitrarily long prompts without hitting argument length limits.
+        """
+        cmd = [self.command] + self._build_args()
 
         logger.debug("CLI call: %s (prompt length: %d chars)", self.command, len(prompt))
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
         try:
             stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
+                process.communicate(input=prompt.encode()),
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
