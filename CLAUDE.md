@@ -36,9 +36,25 @@ Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 ```
 
 This is planned in phases:
-- **v0.1** — Single machine: all agents run locally (solo brainstorming, prototyping)
+- **v0.1** — Single machine: all agents run locally (solo brainstorming, prototyping) ✅
+- **v0.1.x** — Pre-meeting briefing (1-on-1 prep with your agent) + artifact generation (code, documents, not just minutes)
 - **v0.2** — Central server + API: server orchestrates, participants trust the server
 - **v1.0** — Distributed: each participant runs their agent locally, shared channel carries utterances only (full privacy)
+
+### Pre-meeting Briefing (planned)
+Before the conclave is sealed, each participant has a 1-on-1 conversation with their agent:
+1. User tells the agent what they want from this meeting
+2. Agent combines instructions with its built-in memory of the user
+3. Agent may ask clarifying questions
+4. Result: a prepared agent with richer context than a static `instruction` string
+
+### Artifact Generation (planned)
+Meetings produce different outputs depending on the goal:
+- **Brainstorming** → ranked ideas + vote results (currently implemented)
+- **Code work** → code files / patches
+- **Document drafting** → completed document (proposal, spec, report)
+- **Decision making** → decision record with rationale
+All types still produce shared minutes + per-agent personal reports.
 
 ### Data Flow
 ```

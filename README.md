@@ -41,8 +41,28 @@ Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 | Phase | Mode | Privacy | Use Case |
 |-------|------|---------|----------|
 | **v0.1** | Single machine | Local (your PC) | Solo brainstorming with multiple perspectives |
+| **v0.1.x** | Single machine + pre-briefing & artifacts | Local | Full meeting lifecycle with diverse outputs |
 | **v0.2** | Central server + API | Server trust required | Team meetings via hosted service |
 | **v1.0** | Fully distributed | Structural guarantee | Each participant runs locally, utterances-only channel |
+
+### Planned Features
+
+**Pre-meeting briefing** — Before the conclave is sealed, each participant has a 1-on-1 conversation with their agent to prepare:
+- Tell the agent what you want out of this meeting
+- The agent combines your instructions with its memory of you
+- The agent may ask clarifying questions ("How strongly do you feel about X?")
+- Result: a richer, more grounded persona than a static instruction string
+
+**Artifact generation** — Meetings produce different outputs depending on the goal:
+
+| Meeting Goal | Output |
+|-------------|--------|
+| Brainstorming | Ranked ideas + vote results |
+| Code work | Code files / patches |
+| Document drafting | Completed document (proposal, spec, report) |
+| Decision making | Decision record with rationale |
+
+All meeting types still produce shared minutes + per-agent personal reports.
 
 ## Installation
 
