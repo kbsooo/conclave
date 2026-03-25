@@ -16,6 +16,13 @@ class TerminationMode(str, Enum):
     TASK_COMPLETION = "task_completion"        # unanimous: all agents agree task is done
     SUPERMAJORITY_VOTE = "supermajority_vote"  # 2/3 of agents vote to conclude
 
+class MeetingGoal(str, Enum):
+    """What the meeting aims to produce."""
+    BRAINSTORM = "brainstorm"          # generate and rank ideas
+    CODE = "code"                      # produce code / patches
+    DOCUMENT = "document"              # draft a document (proposal, spec, report)
+    DECISION = "decision"              # reach and record a decision with rationale
+
 class MeetingStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -51,6 +58,7 @@ class MeetingConfig(BaseModel):
     meeting_id: str
     topic: str                                 # shared with all agents
     context: str = ""                          # additional shared background
+    goal: MeetingGoal = MeetingGoal.BRAINSTORM # what the meeting aims to produce
     agents: list[AgentConfig]
     termination: TerminationMode = TerminationMode.SUPERMAJORITY_VOTE
     max_rounds: int = 20                       # hard cost ceiling
@@ -96,6 +104,12 @@ class PersonalReport(BaseModel):
     summary: str
     recommendations: list[str] = Field(default_factory=list)
 
+class Artifact(BaseModel):
+    """Concrete deliverable produced by the meeting (code, document, etc.)."""
+    goal: MeetingGoal
+    content: str                               # the artifact text (code, document, decision record)
+    title: str = ""
+
 class MeetingResult(BaseModel):
     """Final output of a completed meeting."""
     meeting_id: str
@@ -103,4 +117,5 @@ class MeetingResult(BaseModel):
     termination_reason: str
     transcript: list[Message] = Field(default_factory=list)
     minutes: Minutes
+    artifact: Artifact | None = None           # goal-specific deliverable
     personal_reports: dict[str, PersonalReport] = Field(default_factory=dict)  # owner_id → report

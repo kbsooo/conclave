@@ -46,6 +46,7 @@ class MeetingOrchestrator:
                 config=ac,
                 meeting_topic=config.topic,
                 meeting_context=config.context,
+                meeting_goal=config.goal,
                 backend=self._create_backend(ac),
             )
             for ac in config.agents
@@ -160,9 +161,12 @@ class MeetingOrchestrator:
         return True  # continue
 
     async def _generate_outputs(self) -> MeetingResult:
-        """Post-meeting: generate minutes and personal reports."""
+        """Post-meeting: generate minutes, artifact, and personal reports."""
         # Shared minutes (neutral, no persona)
         minutes = await self._output_generator.generate_minutes(self._state)
+
+        # Goal-specific artifact (code, document, decision record, etc.)
+        artifact = await self._output_generator.generate_artifact(self._state)
 
         # Per-agent personal reports (persona-informed)
         personal_reports = {}
@@ -178,6 +182,7 @@ class MeetingOrchestrator:
             termination_reason=self._state.termination_reason or "Unknown",
             transcript=self._state.transcript,
             minutes=minutes,
+            artifact=artifact,
             personal_reports=personal_reports,
         )
 

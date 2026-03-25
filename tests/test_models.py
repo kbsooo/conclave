@@ -2,7 +2,9 @@
 
 from conclave.models import (
     AgentConfig,
+    Artifact,
     MeetingConfig,
+    MeetingGoal,
     MeetingState,
     MeetingStatus,
     Message,
@@ -29,7 +31,7 @@ def test_agent_config_api_backend():
     assert ac.temperature == 0.7
 
 
-def test_meeting_config_validation():
+def test_meeting_config_defaults():
     config = MeetingConfig(
         meeting_id="test",
         topic="Test topic",
@@ -39,8 +41,19 @@ def test_meeting_config_validation():
         ],
     )
     assert config.termination == TerminationMode.SUPERMAJORITY_VOTE
+    assert config.goal == MeetingGoal.BRAINSTORM
     assert config.max_rounds == 20
     assert len(config.agents) == 2
+
+
+def test_meeting_config_goal():
+    config = MeetingConfig(
+        meeting_id="test",
+        topic="Write a CLI tool",
+        goal=MeetingGoal.CODE,
+        agents=[AgentConfig(agent_id="a1", owner_id="o1")],
+    )
+    assert config.goal == MeetingGoal.CODE
 
 
 def test_meeting_state_initial():
@@ -66,3 +79,9 @@ def test_minutes_defaults():
     assert m.key_points == []
     assert m.decisions == []
     assert m.action_items == []
+
+
+def test_artifact():
+    a = Artifact(goal=MeetingGoal.CODE, content="print('hello')", title="Test")
+    assert a.goal == MeetingGoal.CODE
+    assert a.content == "print('hello')"
