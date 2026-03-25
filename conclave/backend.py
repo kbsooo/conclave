@@ -97,7 +97,9 @@ class CLIBackend:
         # Default args for known CLI agents
         # Each agent CLI has its own print/headless mode
         known_defaults: dict[str, list[str]] = {
-            "claude": ["-p", "--output-format", "text"],
+            # --no-session-persistence: workaround for empty result bug
+            # (session persistence logic fails to extract generated text)
+            "claude": ["-p", "--no-session-persistence", "--output-format", "text"],
             "gemini": ["-p", ""],
             "codex": ["exec", "-o", "/dev/stdout"],
         }
