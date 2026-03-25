@@ -1,4 +1,8 @@
-"""Solo brainstorming example — one person, three agent perspectives."""
+"""Solo brainstorming example — one person, three agent perspectives.
+
+CLI backend: each agent uses `claude` CLI which already has memory about you.
+API backend: uncomment the api examples to use raw API calls with explicit personas.
+"""
 
 #%%
 import asyncio
@@ -14,6 +18,7 @@ from conclave import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 #%%
+# ── CLI backend (primary): agents already know you via their memory ────
 config = MeetingConfig(
     meeting_id="brainstorm-001",
     topic="What side project should I build next?",
@@ -28,36 +33,51 @@ config = MeetingConfig(
         AgentConfig(
             agent_id="visionary",
             owner_id="me",
-            persona=(
-                "You are the visionary thinker. You push for ambitious, novel ideas "
-                "that could be genuinely impactful. You dislike incremental improvements "
-                "and prefer moonshots. You get excited about emerging tech."
-            ),
-            model="openai/gpt-4o-mini",
+            backend="cli",
+            command="claude",
+            instruction="Push for ambitious, novel ideas. Prefer moonshots over incremental improvements.",
         ),
         AgentConfig(
             agent_id="pragmatist",
             owner_id="me",
-            persona=(
-                "You are the pragmatist. You care about feasibility, time-to-market, "
-                "and whether something can actually ship in 2 months. You push back on "
-                "ideas that are too complex and favor MVPs with clear value."
-            ),
-            model="openai/gpt-4o-mini",
+            backend="cli",
+            command="claude",
+            instruction="Focus on feasibility and time-to-market. Favor MVPs that can ship in 2 months.",
         ),
         AgentConfig(
             agent_id="critic",
             owner_id="me",
-            persona=(
-                "You are the devil's advocate. You find weaknesses in every idea — "
-                "market saturation, technical risks, lack of differentiation. "
-                "You're not negative for its own sake; you genuinely want to find "
-                "the idea that survives scrutiny."
-            ),
-            model="openai/gpt-4o-mini",
+            backend="cli",
+            command="claude",
+            instruction="Find weaknesses in every idea — market saturation, technical risks, lack of differentiation.",
         ),
     ],
 )
+
+# ── API backend alternative (needs explicit persona, no memory) ────────
+# config_api = MeetingConfig(
+#     meeting_id="brainstorm-api",
+#     topic="What side project should I build next?",
+#     context="Solo dev, 2 months, Python/TS/LLM experience.",
+#     termination=TerminationMode.SUPERMAJORITY_VOTE,
+#     max_rounds=5,
+#     agents=[
+#         AgentConfig(
+#             agent_id="visionary",
+#             owner_id="me",
+#             backend="api",
+#             model="openai/gpt-4o-mini",
+#             persona="You are a visionary thinker who pushes for ambitious, novel ideas.",
+#         ),
+#         AgentConfig(
+#             agent_id="pragmatist",
+#             owner_id="me",
+#             backend="api",
+#             model="anthropic/claude-sonnet-4-20250514",
+#             persona="You are a pragmatist who cares about feasibility and shipping fast.",
+#         ),
+#     ],
+# )
 
 #%%
 async def main():

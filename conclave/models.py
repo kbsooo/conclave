@@ -25,10 +25,21 @@ class MeetingStatus(str, Enum):
 # ── Agent Config ───────────────────────────────────────────────────────
 
 class AgentConfig(BaseModel):
-    """Per-agent configuration. `persona` is PRIVATE — never shared."""
+    """Per-agent configuration. Private context never leaves the owner's machine."""
     agent_id: str
     owner_id: str                              # one owner can have multiple agents
-    persona: str                               # secret: only this agent's LLM sees it
+
+    # Backend selection: "cli" (primary) or "api" (fallback)
+    backend: str = "cli"
+
+    # CLI backend fields — the agent already knows the user via its memory
+    command: str = "claude"                    # CLI agent command (claude, openclaw, codex, etc.)
+    instruction: str = ""                      # light guidance for this meeting (the agent's memory does the rest)
+    cli_args: list[str] | None = None          # override default CLI arguments
+    cli_timeout: int = 120                     # seconds before killing the CLI process
+
+    # API backend fields — no memory, so needs full persona
+    persona: str = ""                          # required for API backend; secret, only this agent's LLM sees it
     model: str = "openai/gpt-4o-mini"          # litellm model string
     temperature: float = 0.7
 

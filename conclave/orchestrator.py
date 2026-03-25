@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 
 from conclave.agent import Agent
+from conclave.backend import Backend, create_backend
 from conclave.llm import LLMClient
 from conclave.models import (
+    AgentConfig,
     MeetingConfig,
     MeetingResult,
     MeetingState,
@@ -41,13 +43,13 @@ class MeetingOrchestrator:
         self._llm = llm or LLMClient()
         self._state = MeetingState(config=config)
 
-        # Create agents — each holds its own persona privately
+        # Create agents — each with its own backend (CLI or API)
         self._agents: dict[str, Agent] = {
             ac.agent_id: Agent(
                 config=ac,
                 meeting_topic=config.topic,
                 meeting_context=config.context,
-                llm=self._llm,
+                backend=self._create_backend(ac),
             )
             for ac in config.agents
         }
@@ -58,6 +60,18 @@ class MeetingOrchestrator:
             agent_ids=[a.agent_id for a in config.agents],
         )
         self._output_generator = OutputGenerator(llm=self._llm)
+
+    def _create_backend(self, ac: AgentConfig) -> Backend:
+        """Create the appropriate backend for an agent config."""
+        return create_backend(
+            backend_type=ac.backend,
+            command=ac.command,
+            model=ac.model,
+            temperature=ac.temperature,
+            llm=self._llm,
+            cli_args=ac.cli_args,
+            cli_timeout=ac.cli_timeout,
+        )
 
     async def run(self) -> MeetingResult:
         """Execute the entire meeting. Returns when done.
@@ -95,10 +109,9 @@ class MeetingOrchestrator:
         self._state.status = MeetingStatus.COMPLETED
 
         logger.info(
-            "Conclave concluded after %d rounds: %s (total tokens: %d)",
+            "Conclave concluded after %d rounds: %s",
             self._state.current_round,
             self._state.termination_reason,
-            self._llm.total_tokens,
         )
 
         return await self._generate_outputs()
