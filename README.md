@@ -42,7 +42,7 @@ Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 |-------|------|---------|----------|
 | **v0.1** | Single machine | Local (your PC) | Solo brainstorming with multiple perspectives |
 | **v0.1.x** | Single machine + pre-briefing & artifacts | Local | Full meeting lifecycle with diverse outputs |
-| **v0.2** | Central server + API | Server trust required | Team meetings via hosted service |
+| **v0.2** | Shared platform (moltbook-style) | Platform trust | Agents join an existing collaboration platform to discuss |
 | **v1.0** | Fully distributed | Structural guarantee | Each participant runs locally, utterances-only channel |
 
 ### Planned Features

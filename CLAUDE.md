@@ -37,8 +37,8 @@ Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 
 This is planned in phases:
 - **v0.1** — Single machine: all agents run locally (solo brainstorming, prototyping) ✅
-- **v0.1.x** — Pre-meeting briefing (1-on-1 prep with your agent) + artifact generation (code, documents, not just minutes)
-- **v0.2** — Central server + API: server orchestrates, participants trust the server
+- **v0.1.x** — Pre-meeting briefing (1-on-1 prep with your agent) + artifact generation (code, documents, not just minutes) ✅
+- **v0.2** — Shared platform as meeting room: agents join an existing collaboration platform (moltbook-style) to discuss, no custom server needed
 - **v1.0** — Distributed: each participant runs their agent locally, shared channel carries utterances only (full privacy)
 
 ### Pre-meeting Briefing (planned)

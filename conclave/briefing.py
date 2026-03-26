@@ -8,9 +8,7 @@ that the agent carries into the meeting.
 
 from __future__ import annotations
 
-import sys
-
-from conclave.backend import Backend, create_backend
+from conclave.backend import create_backend
 from conclave.models import AgentConfig, MeetingConfig
 
 
@@ -19,16 +17,30 @@ You are about to attend a meeting on behalf of your principal.
 
 Meeting topic: {topic}
 Meeting context: {context}
-Your initial instruction: {instruction}
+Your role/instruction: {instruction}
 
-Your task now is to have a brief preparation conversation with your principal \
-(the person you represent). Ask 2-3 focused questions to understand:
+Have a brief preparation conversation with your principal (the person you represent).
+Ask ONE focused question at a time to understand:
 - What outcomes they want from this meeting
 - Any strong opinions or non-negotiables they have
 - What they would consider a successful result
 
-Be concise and conversational. Ask ONE question at a time.
-Start with your first question now."""
+Be concise and conversational. Start with your first question now."""
+
+FOLLOWUP_PROMPT = """\
+You are preparing for a meeting on behalf of your principal.
+
+Meeting topic: {topic}
+Your role/instruction: {instruction}
+
+Conversation so far:
+{conversation}
+
+Based on the conversation, either:
+- Ask ONE more focused follow-up question, OR
+- If you have enough information, say so and briefly summarize what you've learned.
+
+Be concise."""
 
 CONSOLIDATION_PROMPT = """\
 Based on the preparation conversation below, write a consolidated briefing \
@@ -64,27 +76,36 @@ async def brief_agent(
         cli_timeout=agent_config.cli_timeout,
     )
 
-    # Start the briefing conversation
+    # Show meeting context to the user first
+    print(f"\n{'═' * 50}")
+    print(f"  Briefing: {agent_config.agent_id}")
+    print(f"  Topic: {meeting_config.topic}")
+    if agent_config.instruction:
+        print(f"  Role: {agent_config.instruction}")
+    print(f"{'═' * 50}")
+    print(f"  (type 'done' to finish, 'skip' to skip this agent)")
+
+    # Get first question from agent
     initial_prompt = BRIEFING_PROMPT.format(
         topic=meeting_config.topic,
         context=meeting_config.context or "(no additional context)",
         instruction=agent_config.instruction or "(no specific instruction)",
     )
 
-    conversation: list[str] = []
     agent_message = await backend.generate(initial_prompt)
-    conversation.append(f"Agent: {agent_message}")
+    conversation: list[str] = []
 
-    print(f"\n{'─' * 50}")
-    print(f"Briefing: {agent_config.agent_id}")
-    print(f"{'─' * 50}")
+    if not agent_message.strip():
+        print("\n  ⚠ Agent returned empty response, skipping briefing.")
+        return agent_config.instruction
+
+    conversation.append(f"Agent: {agent_message}")
 
     for i in range(max_exchanges):
         # Show agent's question
         print(f"\n🤖 {agent_message}")
 
         # Get user's answer
-        print()
         user_input = _read_user_input()
         if not user_input or user_input.lower() in ("skip", "done", "pass"):
             break
@@ -93,17 +114,19 @@ async def brief_agent(
 
         # Agent responds with next question (or wraps up)
         if i < max_exchanges - 1:
-            followup_prompt = (
-                f"{initial_prompt}\n\n"
-                f"Conversation so far:\n" + "\n".join(conversation) + "\n\n"
-                f"Ask your next question (or say you have enough information)."
+            followup_prompt = FOLLOWUP_PROMPT.format(
+                topic=meeting_config.topic,
+                instruction=agent_config.instruction or "(none)",
+                conversation="\n".join(conversation),
             )
             agent_message = await backend.generate(followup_prompt)
+            if not agent_message.strip():
+                break
             conversation.append(f"Agent: {agent_message}")
 
     # Consolidate into enriched instruction
-    if len(conversation) <= 1:
-        # User skipped — keep original instruction
+    if not any(line.startswith("User:") for line in conversation):
+        # User didn't say anything — keep original instruction
         return agent_config.instruction
 
     consolidated = await backend.generate(
@@ -139,6 +162,6 @@ async def brief_all_agents(
 def _read_user_input() -> str:
     """Read user input from stdin. Handles EOF gracefully."""
     try:
-        return input("You: ").strip()
+        return input("\nYou: ").strip()
     except (EOFError, KeyboardInterrupt):
         return ""

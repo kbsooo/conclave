@@ -58,6 +58,7 @@ class MeetingConfig(BaseModel):
     meeting_id: str
     topic: str                                 # shared with all agents
     context: str = ""                          # additional shared background
+    context_files: list[str] = Field(default_factory=list)  # files loaded into shared context
     goal: MeetingGoal = MeetingGoal.BRAINSTORM # what the meeting aims to produce
     agents: list[AgentConfig]
     termination: TerminationMode = TerminationMode.SUPERMAJORITY_VOTE
