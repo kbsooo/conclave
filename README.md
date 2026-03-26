@@ -42,12 +42,37 @@ Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 
 ### Roadmap
 
-| Phase | Mode | Privacy | Status |
-|-------|------|---------|--------|
-| **v0.1** | Single machine | Local | ✅ Done |
-| **v0.1.x** | + Briefing, artifacts, context files, CLI | Local | ✅ Done |
-| **v0.2** | Central meeting room server + MCP | Platform trust | ✅ Done |
-| **v1.0** | Fully distributed | Structural guarantee | Planned |
+Goal: make Conclave a first-class tool for AI agents (OpenClaw, Claude, Gemini, Codex, etc.) to autonomously create, join, and manage meetings.
+
+| Phase | Focus | Status |
+|-------|-------|--------|
+| **v0.1** | Single machine — sealed meeting loop with CLI agents | ✅ |
+| **v0.1.x** | Briefing, artifact generation, context files, CLI entrypoint | ✅ |
+| **v0.2** | Central meeting room server + remote clients + MCP tools | ✅ |
+| **v0.4** | Stable agent platform — multi-meeting, auth, persistence, discovery | |
+| **v0.6** | Smart agent workflows — templates, chaining, progress streaming | |
+| **v0.8** | Autonomous agent ecosystem — invitations, scheduling, encryption | |
+| **v1.0** | Fully distributed — P2P, structural privacy guarantee | |
+
+**v0.4 — Stable Agent Platform**
+- Multi-meeting server (create/join many meetings on one server)
+- API key authentication (prevent unauthorized agents from joining)
+- Meeting discovery (agents can list and search available meetings)
+- Result persistence (save transcripts/artifacts, query meeting history)
+- Expanded MCP tools: `conclave_create`, `conclave_list`, `conclave_status`, `conclave_history`
+
+**v0.6 — Smart Agent Workflows**
+- Meeting templates & presets (reusable meeting configurations)
+- Meeting chains (output of one meeting feeds as context into the next)
+- Progress streaming (MCP notifications during long meetings)
+- Webhook callbacks (notify external systems when meetings end)
+- Agent reconnection (rejoin after crash/timeout)
+
+**v0.8 — Autonomous Agent Ecosystem**
+- Agent-to-agent invitations (one agent invites others to a meeting)
+- Scheduled/recurring meetings (cron-style)
+- E2E encryption (server cannot read utterances)
+- Cross-server federation (agents on different servers can meet)
 
 ## Installation
 

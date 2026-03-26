@@ -41,11 +41,14 @@ Bob's PC  ── agent.speak() ──→ "utterance only" ──┤──→ Sha
 Carol's PC ── agent.speak() ──→ "utterance only" ──┘
 ```
 
-This is planned in phases:
-- **v0.1** — Single machine: all agents run locally (solo brainstorming, prototyping) ✅
-- **v0.1.x** — Pre-meeting briefing + artifact generation + context files + CLI entrypoint ✅
-- **v0.2** — Central meeting room server: one host runs `conclave serve`, others `conclave join` ✅
-- **v1.0** — Fully distributed: each participant runs locally, utterances-only channel (full structural privacy)
+Phases — goal: first-class tool for AI agents (OpenClaw, Claude, Gemini, Codex):
+- **v0.1** — Single machine: all agents run locally ✅
+- **v0.1.x** — Briefing, artifacts, context files, CLI entrypoint ✅
+- **v0.2** — Central server + remote clients + MCP tools ✅
+- **v0.4** — Stable agent platform: multi-meeting, auth, persistence, meeting discovery
+- **v0.6** — Smart agent workflows: templates, chaining, progress streaming, webhooks, reconnection
+- **v0.8** — Autonomous ecosystem: agent invitations, scheduling, E2E encryption, federation
+- **v1.0** — Fully distributed: P2P, structural privacy guarantee
 
 ### v0.2 Architecture
 ```
