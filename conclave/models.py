@@ -60,7 +60,8 @@ class MeetingConfig(BaseModel):
     context: str = ""                          # additional shared background
     context_files: list[str] = Field(default_factory=list)  # files loaded into shared context
     goal: MeetingGoal = MeetingGoal.BRAINSTORM # what the meeting aims to produce
-    agents: list[AgentConfig]
+    agents: list[AgentConfig] = Field(default_factory=list)
+    expected_agents: int = 0                   # v0.2: auto-seal after N agents join (0 = manual seal)
     termination: TerminationMode = TerminationMode.SUPERMAJORITY_VOTE
     max_rounds: int = 20                       # hard cost ceiling
     max_tokens_per_agent: int = 4096           # per-call token limit

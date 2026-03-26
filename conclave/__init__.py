@@ -1,6 +1,7 @@
 """Conclave: Multi-agent meeting system where AI agents represent humans."""
 
 from conclave.briefing import brief_all_agents
+from conclave.client import MeetingClient
 from conclave.config import load_meeting_config
 from conclave.models import (
     AgentConfig,
@@ -14,6 +15,7 @@ from conclave.orchestrator import MeetingOrchestrator
 
 __all__ = [
     "AgentConfig",
+    "MeetingClient",
     "MeetingConfig",
     "MeetingGoal",
     "MeetingOrchestrator",

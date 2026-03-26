@@ -9,6 +9,7 @@ description = "Multi-agent meeting system where AI agents represent humans"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
+    "aiohttp>=3.9",
     "litellm>=1.40",
     "pydantic>=2.0",
     "pyyaml>=6.0",
