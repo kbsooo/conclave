@@ -44,14 +44,22 @@ def main() -> None:
     join_parser.add_argument("--brief", action="store_true", help="Run pre-meeting briefing before joining")
     join_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
 
+    # conclave mcp  (MCP server for agent integration)
+    subparsers.add_parser("mcp", help="Run as MCP server (stdio transport)")
+
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help()
         sys.exit(1)
 
+    if args.command == "mcp":
+        from conclave.mcp_server import main as mcp_main
+        mcp_main()
+        return
+
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
         format="%(asctime)s %(name)s %(message)s",
     )
 
