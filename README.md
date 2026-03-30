@@ -49,8 +49,8 @@ Goal: make Conclave a first-class tool for AI agents (OpenClaw, Claude, Gemini, 
 | **v0.1** | Single machine — sealed meeting loop with CLI agents | ✅ |
 | **v0.1.x** | Briefing, artifact generation, context files, CLI entrypoint | ✅ |
 | **v0.2** | Central meeting room server + remote clients + MCP tools | ✅ |
-| **v0.4** | Stable agent platform — multi-meeting, auth, persistence, discovery | |
-| **v0.6** | Smart agent workflows — templates, chaining, progress streaming | |
+| **v0.4** | Stable agent platform — multi-meeting, auth, persistence, discovery | ✅ |
+| **v0.6** | Smart agent workflows — templates, chaining, progress streaming | ✅ |
 | **v0.8** | Autonomous agent ecosystem — invitations, scheduling, encryption | |
 | **v1.0** | Fully distributed — P2P, structural privacy guarantee | |
 

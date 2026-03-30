@@ -1,7 +1,7 @@
-"""Meeting room server — the shared conclave space (v0.4).
+"""Meeting room server — the shared conclave space (v0.6).
 
-Multi-meeting server with authentication, persistence, and discovery.
-Agents create meetings, join them, and get results — all via HTTP.
+Multi-meeting server with auth, persistence, templates, chains,
+webhooks, SSE streaming, and agent reconnection.
 
 Privacy: only utterances pass through the server. Personas stay on clients.
 """
@@ -9,24 +9,28 @@ Privacy: only utterances pass through the server. Personas stay on clients.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import os
 import random
+from datetime import datetime, timezone
 from typing import Callable
 
+import aiohttp as aiohttp_lib
 from aiohttp import web
 
 from conclave.auth import auth_middleware, generate_api_key
 from conclave.models import (
     MeetingConfig,
     MeetingStatus,
+    MeetingTemplate,
     Message,
     ServerConfig,
     TerminationMode,
 )
 from conclave.output import ARTIFACT_PROMPTS, MINUTES_PROMPT
-from conclave.persistence import MeetingPersistence
+from conclave.persistence import MeetingPersistence, TemplatePersistence
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,8 @@ class AgentSlot:
         self.owner_id = owner_id
         self.action_queue: asyncio.Queue[dict] = asyncio.Queue()
         self.response_future: asyncio.Future[str] | None = None
+        self.connected: bool = True
+        self.pending_action: dict | None = None  # last action sent, for reconnection
 
 
 class MeetingRoom:
@@ -66,10 +72,35 @@ class MeetingRoom:
         self._sealed = asyncio.Event()
         self._meeting_task: asyncio.Task | None = None
         self._on_complete = on_complete
+        self._event_subscribers: list[asyncio.Queue] = []
+
+    # ── Event bus (SSE) ─────────────────────────────────────────────
+
+    def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        self._event_subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        self._event_subscribers = [s for s in self._event_subscribers if s is not q]
+
+    def _emit(self, event_type: str, data: dict | None = None) -> None:
+        event = {
+            "event": event_type,
+            "meeting_id": self.config.meeting_id,
+            "data": data or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        for q in self._event_subscribers:
+            q.put_nowait(event)
 
     # ── Registration ────────────────────────────────────────────────
 
     def join(self, agent_id: str, owner_id: str) -> dict:
+        # Reconnection: agent already registered and meeting is sealed
+        if agent_id in self.agents and self._sealed.is_set():
+            return self.rejoin(agent_id, owner_id)
+
         if self._sealed.is_set():
             raise ValueError("Meeting already sealed, cannot join")
         if agent_id in self.agents:
@@ -90,12 +121,34 @@ class MeetingRoom:
 
         return self.meeting_info()
 
+    def rejoin(self, agent_id: str, owner_id: str) -> dict:
+        """Reconnect a disconnected agent to an in-progress meeting."""
+        slot = self.agents.get(agent_id)
+        if not slot:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        if slot.owner_id != owner_id:
+            raise ValueError("Owner mismatch")
+
+        slot.connected = True
+        self._emit("agent_reconnected", {"agent_id": agent_id})
+        logger.info("Agent '%s' reconnected to '%s'", agent_id, self.config.meeting_id)
+
+        # Re-queue the pending action if the server was waiting for this agent
+        if slot.pending_action and slot.response_future and not slot.response_future.done():
+            asyncio.ensure_future(slot.action_queue.put(slot.pending_action))
+
+        info = self.meeting_info()
+        info["reconnected"] = True
+        info["current_round"] = self.current_round
+        return info
+
     def seal(self) -> None:
         if self._sealed.is_set():
             return
         if not self.agents:
             raise ValueError("No agents registered")
         self._sealed.set()
+        self._emit("meeting_sealed", {"agents": list(self.agents.keys())})
         self._meeting_task = asyncio.create_task(self._run_meeting())
         logger.info("Meeting '%s' sealed with %d agents", self.config.meeting_id, len(self.agents))
 
@@ -139,6 +192,8 @@ class MeetingRoom:
 
         self.status = MeetingStatus.COMPLETED
 
+        self._emit("meeting_completed", {"termination_reason": self.termination_reason})
+
         if self._on_complete:
             self._on_complete(self)
 
@@ -147,46 +202,63 @@ class MeetingRoom:
 
         logger.info("Meeting '%s' completed: %s", self.config.meeting_id, self.termination_reason)
 
+    AGENT_TIMEOUT = 300  # seconds to wait for an agent before using default response
+
+    async def _await_agent(self, slot: AgentSlot, action: dict, default: str) -> str:
+        """Wait for an agent's response with timeout and reconnection support."""
+        slot.pending_action = action
+        await slot.action_queue.put(action)
+        try:
+            result = await asyncio.wait_for(slot.response_future, timeout=self.AGENT_TIMEOUT)
+        except asyncio.TimeoutError:
+            slot.connected = False
+            logger.warning("Agent '%s' timed out, using default response", slot.agent_id)
+            result = default
+            if slot.response_future and not slot.response_future.done():
+                slot.response_future.cancel()
+        slot.response_future = None
+        slot.pending_action = None
+        return result
+
     async def _run_round(self) -> bool:
         agent_ids = list(self.agents.keys())
         random.shuffle(agent_ids)
+        self._emit("round_started", {"round": self.current_round, "order": agent_ids})
         logger.info("Round %d — order: %s", self.current_round, agent_ids)
         loop = asyncio.get_running_loop()
 
         for agent_id in agent_ids:
             slot = self.agents[agent_id]
             slot.response_future = loop.create_future()
-            await slot.action_queue.put({
+            action = {
                 "action": "speak",
                 "transcript": self._transcript_dicts(),
                 "round_number": self.current_round,
-            })
-            utterance = await slot.response_future
-            slot.response_future = None
+            }
+            utterance = await self._await_agent(slot, action, default="[No response — agent disconnected]")
             self.transcript.append(Message(
                 role="agent", agent_id=agent_id,
                 content=utterance, round_number=self.current_round,
             ))
+            self._emit("agent_spoke", {"agent_id": agent_id, "round": self.current_round})
             logger.debug("[%s] %s", agent_id, utterance[:100])
 
         # Voting
-        futures: dict[str, asyncio.Future[str]] = {}
         for agent_id, slot in self.agents.items():
             slot.response_future = loop.create_future()
-            await slot.action_queue.put({
-                "action": "vote",
-                "transcript": self._transcript_dicts(),
-            })
-            futures[agent_id] = slot.response_future
+        vote_action = {"action": "vote", "transcript": self._transcript_dicts()}
+        vote_results: dict[str, str] = {}
+        for agent_id, slot in self.agents.items():
+            slot.response_future = loop.create_future()
+            vote_results[agent_id] = await self._await_agent(slot, vote_action, default="NO")
 
         votes: dict[str, bool] = {}
-        for agent_id, future in futures.items():
-            raw = await future
-            self.agents[agent_id].response_future = None
+        for agent_id, raw in vote_results.items():
             votes[agent_id] = raw.strip().upper().startswith("YES") if isinstance(raw, str) else bool(raw)
 
         yes_count = sum(1 for v in votes.values() if v)
         total = len(votes)
+        self._emit("vote_result", {"round": self.current_round, "yes": yes_count, "total": total})
         logger.info("Round %d votes: %d/%d", self.current_round, yes_count, total)
 
         if self.config.termination == TerminationMode.SUPERMAJORITY_VOTE:
@@ -290,7 +362,7 @@ class MeetingRoom:
 
 
 class MeetingManager:
-    """Manages multiple concurrent meetings with persistence."""
+    """Manages meetings, templates, chains, webhooks, and persistence."""
 
     def __init__(
         self,
@@ -299,6 +371,7 @@ class MeetingManager:
         self.config = server_config or ServerConfig()
         self.meetings: dict[str, MeetingRoom] = {}
         self.persistence = MeetingPersistence(self.config.data_dir)
+        self.templates = TemplatePersistence(self.config.data_dir)
         self._lock = asyncio.Lock()
 
     async def create_meeting(self, config: MeetingConfig) -> MeetingRoom:
@@ -308,10 +381,40 @@ class MeetingManager:
             if len(self.meetings) >= self.config.max_meetings:
                 raise ValueError(f"Max concurrent meetings ({self.config.max_meetings}) reached")
 
+            # Chain: load prior meeting result into context
+            if config.chain_from:
+                prior = self.persistence.load(config.chain_from)
+                if prior:
+                    chain_text = self._extract_chain_context(prior, config.chain_context_mode)
+                    config = config.model_copy(update={
+                        "context": f"{config.context}\n\n--- Prior Meeting Output ({config.chain_from}) ---\n{chain_text}",
+                    })
+                else:
+                    logger.warning("Chain source '%s' not found in history", config.chain_from)
+
             room = MeetingRoom(config, on_complete=self._on_meeting_complete)
             self.meetings[config.meeting_id] = room
             logger.info("Created meeting '%s': %s", config.meeting_id, config.topic)
             return room
+
+    async def create_from_template(
+        self, template_id: str, topic: str, context: str = "", meeting_id: str = "",
+    ) -> MeetingRoom:
+        data = self.templates.load(template_id)
+        if not data:
+            raise ValueError(f"Template '{template_id}' not found")
+        template = MeetingTemplate.model_validate(data)
+        config = MeetingConfig(
+            meeting_id=meeting_id or f"{template_id}-{topic[:20].replace(' ', '-').lower()}",
+            topic=topic,
+            context=context,
+            goal=template.goal,
+            termination=template.termination,
+            max_rounds=template.max_rounds,
+            expected_agents=template.expected_agents,
+            template_id=template_id,
+        )
+        return await self.create_meeting(config)
 
     def get_meeting(self, meeting_id: str) -> MeetingRoom:
         try:
@@ -335,6 +438,40 @@ class MeetingManager:
     def _on_meeting_complete(self, room: MeetingRoom) -> None:
         if room.result_data:
             self.persistence.save(room.config.meeting_id, room.result_data)
+        # Webhook
+        if room.config.webhook_url:
+            asyncio.ensure_future(self._deliver_webhook(room))
+
+    async def _deliver_webhook(self, room: MeetingRoom, retries: int = 3) -> None:
+        url = room.config.webhook_url
+        headers = {"Content-Type": "application/json"}
+        headers.update(room.config.webhook_headers)
+        payload = {
+            "event": "meeting_completed",
+            "meeting_id": room.config.meeting_id,
+            "result": room.result_data,
+        }
+        for attempt in range(retries):
+            try:
+                async with aiohttp_lib.ClientSession() as session:
+                    async with session.post(url, json=payload, headers=headers, timeout=aiohttp_lib.ClientTimeout(total=30)) as resp:
+                        if resp.status < 400:
+                            logger.info("Webhook delivered to %s (status %d)", url, resp.status)
+                            return
+                        logger.warning("Webhook %s returned %d", url, resp.status)
+            except Exception as e:
+                logger.warning("Webhook attempt %d failed: %s", attempt + 1, e)
+            await asyncio.sleep(2 ** attempt)
+        logger.error("Webhook delivery to %s failed after %d retries", url, retries)
+
+    @staticmethod
+    def _extract_chain_context(result: dict, mode: str) -> str:
+        if mode == "artifact":
+            return result.get("artifact_raw") or result.get("minutes_raw", "")
+        elif mode == "full":
+            return json.dumps(result, indent=2, default=str)
+        else:  # "minutes" (default)
+            return result.get("minutes_raw", "")
 
 
 # ── HTTP Routes ─────────────────────────────────────────────────────
@@ -372,9 +509,10 @@ def create_app(
     manager = MeetingManager(sc)
     app["manager"] = manager
 
-    # Routes: multi-meeting
+    # Routes: meetings
     app.router.add_post("/meetings", handle_create_meeting)
     app.router.add_get("/meetings", handle_list_meetings)
+    app.router.add_post("/meetings/from-template", handle_create_from_template)
     app.router.add_get("/meetings/history", handle_history)
     app.router.add_get("/meetings/history/{meeting_id}", handle_history_detail)
     app.router.add_get("/meetings/{meeting_id}", handle_meeting_info)
@@ -383,6 +521,11 @@ def create_app(
     app.router.add_get("/meetings/{meeting_id}/next", handle_next)
     app.router.add_post("/meetings/{meeting_id}/respond", handle_respond)
     app.router.add_get("/meetings/{meeting_id}/result", handle_result)
+    app.router.add_get("/meetings/{meeting_id}/events", handle_events)
+    # Routes: templates
+    app.router.add_post("/templates", handle_save_template)
+    app.router.add_get("/templates", handle_list_templates)
+    app.router.add_get("/templates/{template_id}", handle_get_template)
 
     # Create initial meeting if provided (for `conclave serve meeting.yaml`)
     if initial_meeting:
@@ -503,6 +646,82 @@ async def handle_history_detail(request: web.Request) -> web.Response:
     if result is None:
         return web.json_response({"error": "Meeting not found in history"}, status=404)
     return web.json_response(result)
+
+
+# ── Template routes ─────────────────────────────────────────────────
+
+
+async def handle_save_template(request: web.Request) -> web.Response:
+    manager: MeetingManager = request.app["manager"]
+    data = await request.json()
+    try:
+        template = MeetingTemplate.model_validate(data)
+        manager.templates.save(template.template_id, template.model_dump(mode="json"))
+        return web.json_response({"template_id": template.template_id}, status=201)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+
+async def handle_list_templates(request: web.Request) -> web.Response:
+    manager: MeetingManager = request.app["manager"]
+    return web.json_response(manager.templates.list_templates())
+
+
+async def handle_get_template(request: web.Request) -> web.Response:
+    manager: MeetingManager = request.app["manager"]
+    template_id = request.match_info["template_id"]
+    data = manager.templates.load(template_id)
+    if data is None:
+        return web.json_response({"error": "Template not found"}, status=404)
+    return web.json_response(data)
+
+
+async def handle_create_from_template(request: web.Request) -> web.Response:
+    manager: MeetingManager = request.app["manager"]
+    data = await request.json()
+    try:
+        room = await manager.create_from_template(
+            template_id=data["template_id"],
+            topic=data["topic"],
+            context=data.get("context", ""),
+            meeting_id=data.get("meeting_id", ""),
+        )
+        return web.json_response(room.meeting_info(), status=201)
+    except (ValueError, KeyError) as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+
+# ── SSE route ───────────────────────────────────────────────────────
+
+
+async def handle_events(request: web.Request) -> web.StreamResponse:
+    """Server-Sent Events endpoint for real-time meeting progress."""
+    try:
+        room = _get_room(request)
+    except ValueError as e:
+        resp = web.Response(status=404, text=str(e))
+        return resp
+
+    response = web.StreamResponse()
+    response.content_type = "text/event-stream"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Connection"] = "keep-alive"
+    await response.prepare(request)
+
+    queue = room.subscribe()
+    try:
+        while True:
+            event = await asyncio.wait_for(queue.get(), timeout=120)
+            sse_data = json.dumps(event, default=str)
+            await response.write(f"event: {event['event']}\ndata: {sse_data}\n\n".encode())
+            if event["event"] == "meeting_completed":
+                break
+    except (asyncio.TimeoutError, ConnectionResetError, asyncio.CancelledError):
+        pass
+    finally:
+        room.unsubscribe(queue)
+
+    return response
 
 
 # ── Entry point ─────────────────────────────────────────────────────

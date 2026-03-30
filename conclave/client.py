@@ -54,10 +54,19 @@ class MeetingClient:
     def _meeting_url(self, path: str) -> str:
         return f"{self.server_url}/meetings/{self.meeting_id}{path}"
 
+    MAX_RECONNECTS = 5
+    RECONNECT_DELAY = 2.0  # seconds, doubles each retry
+
     async def run(self) -> dict | None:
-        """Join the meeting and participate until it ends."""
+        """Join the meeting and participate until it ends.
+
+        Automatically reconnects on disconnection (up to MAX_RECONNECTS times).
+        """
         timeout = aiohttp.ClientTimeout(total=300)
         headers = self._headers()
+        result = None
+        reconnects = 0
+
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             # Auto-discover meeting if no meeting_id specified
             if not self.meeting_id:
@@ -65,30 +74,35 @@ class MeetingClient:
 
             # 1. Join
             meeting_info = await self._join(session)
-            logger.info("Joined meeting: %s", meeting_info["meeting_id"])
+            reconnected = meeting_info.get("reconnected", False)
 
-            print(f"\nJoined meeting: {meeting_info['topic']}")
-            print(f"  Goal: {meeting_info['goal']}")
-            print(
-                f"  Agents: {len(meeting_info.get('agents', []))}/"
-                f"{meeting_info['expected_agents']}"
-            )
-            print("  Waiting for meeting to start...\n")
+            if reconnected:
+                print(f"\n  Reconnected to meeting (round {meeting_info.get('current_round', '?')})")
+            else:
+                logger.info("Joined meeting: %s", meeting_info["meeting_id"])
+                print(f"\nJoined meeting: {meeting_info['topic']}")
+                print(f"  Goal: {meeting_info['goal']}")
+                print(
+                    f"  Agents: {len(meeting_info.get('agents', []))}/"
+                    f"{meeting_info['expected_agents']}"
+                )
+                print("  Waiting for meeting to start...\n")
 
-            # 2. Create local agent
-            self._agent = Agent(
-                config=self.agent_config,
-                meeting_topic=meeting_info["topic"],
-                meeting_context=meeting_info.get("context", ""),
-                meeting_goal=MeetingGoal(meeting_info["goal"]),
-                backend=self._backend,
-            )
+            # 2. Create local agent (once)
+            if self._agent is None:
+                self._agent = Agent(
+                    config=self.agent_config,
+                    meeting_topic=meeting_info["topic"],
+                    meeting_context=meeting_info.get("context", ""),
+                    meeting_goal=MeetingGoal(meeting_info["goal"]),
+                    backend=self._backend,
+                )
 
-            # 3. Action loop
-            result = None
-            try:
-                while True:
+            # 3. Action loop with reconnection
+            while True:
+                try:
                     action = await self._get_next(session)
+                    reconnects = 0  # reset on success
                     action_type = action.get("action")
 
                     if action_type == "wait":
@@ -106,10 +120,26 @@ class MeetingClient:
                         await self._handle_generate_report(session, action)
                     else:
                         logger.warning("Unknown action: %s", action_type)
-            except (aiohttp.ClientError, OSError) as e:
-                if result is None:
-                    logger.warning("Lost connection to server: %s", e)
-                    print(f"\n  Connection lost: {e}")
+
+                except (aiohttp.ClientError, OSError) as e:
+                    reconnects += 1
+                    if reconnects > self.MAX_RECONNECTS:
+                        logger.error("Max reconnection attempts reached")
+                        print(f"\n  Connection lost permanently: {e}")
+                        break
+
+                    delay = self.RECONNECT_DELAY * (2 ** (reconnects - 1))
+                    logger.warning("Connection lost, reconnecting in %.0fs (%d/%d)...",
+                                   delay, reconnects, self.MAX_RECONNECTS)
+                    print(f"  Reconnecting in {delay:.0f}s...")
+                    await asyncio.sleep(delay)
+
+                    try:
+                        info = await self._join(session)
+                        if info.get("reconnected"):
+                            print(f"  Reconnected (round {info.get('current_round', '?')})")
+                    except Exception as re_err:
+                        logger.warning("Reconnect attempt failed: %s", re_err)
 
             return result
 

@@ -90,3 +90,39 @@ class MeetingPersistence:
     def _safe_name(meeting_id: str) -> str:
         """Sanitize meeting_id for use as a directory name."""
         return meeting_id.replace("/", "_").replace("\\", "_").replace("..", "_")
+
+
+class TemplatePersistence:
+    """Save and load meeting templates from disk."""
+
+    def __init__(self, data_dir: str = "~/.conclave") -> None:
+        self.base_dir = Path(data_dir).expanduser() / "templates"
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, template_id: str, data: dict) -> Path:
+        path = self.base_dir / f"{MeetingPersistence._safe_name(template_id)}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Saved template '%s'", template_id)
+        return path
+
+    def load(self, template_id: str) -> dict | None:
+        path = self.base_dir / f"{MeetingPersistence._safe_name(template_id)}.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def list_templates(self) -> list[dict]:
+        templates: list[dict] = []
+        for path in self.base_dir.glob("*.json"):
+            try:
+                templates.append(json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return templates
+
+    def delete(self, template_id: str) -> bool:
+        path = self.base_dir / f"{MeetingPersistence._safe_name(template_id)}.json"
+        if path.exists():
+            path.unlink()
+            return True
+        return False

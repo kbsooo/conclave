@@ -66,6 +66,25 @@ class MeetingConfig(BaseModel):
     max_rounds: int = 20                       # hard cost ceiling
     max_tokens_per_agent: int = 4096           # per-call token limit
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # v0.6
+    chain_from: str | None = None              # prior meeting_id whose result feeds into context
+    chain_context_mode: str = "minutes"        # what to extract: "minutes", "artifact", "full"
+    webhook_url: str | None = None             # POST result here on completion
+    webhook_headers: dict[str, str] = Field(default_factory=dict)
+    template_id: str | None = None             # which template was used (informational)
+
+
+# ── Meeting Template (v0.6) ──────────────────────────────────────────
+
+class MeetingTemplate(BaseModel):
+    """Reusable meeting configuration — supply topic/context at instantiation."""
+    template_id: str
+    name: str
+    description: str = ""
+    goal: MeetingGoal = MeetingGoal.BRAINSTORM
+    termination: TerminationMode = TerminationMode.SUPERMAJORITY_VOTE
+    max_rounds: int = 10
+    expected_agents: int = 3
 
 
 # ── Server Config (v0.4) ─────────────────────────────────────────────
